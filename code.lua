@@ -1,5 +1,5 @@
 -- ============================
--- SCRIPT HUB v2 (Stable & Modern)
+-- SCRIPT HUB v4 (Stable Release)
 -- ============================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -14,11 +14,11 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- ============================
 -- STATE & SETTINGS
 -- ============================
-if _G.ScriptHubState == nil then _G.ScriptHubState = {} end
+if type(_G.ScriptHubState) ~= "table" then _G.ScriptHubState = {} end
 _G.ScriptHubState.NotifyEnabled = (_G.ScriptHubState.NotifyEnabled == nil) and true or _G.ScriptHubState.NotifyEnabled
 _G.ScriptHubState.ScriptCache = nil
 
-local isExecuting = false -- Debounce for script execution
+local isExecuting = false
 
 -- ============================
 -- THEME & ASSETS
@@ -49,7 +49,6 @@ local function preloadSounds()
         s.Parent = playerGui
         soundInstances[name] = s
     end
-    -- Preload them properly without messy loops
     local assets = {}
     for _, s in pairs(soundInstances) do table.insert(assets, s) end
     pcall(function()
@@ -115,6 +114,118 @@ local function addHoverEffect(btn, defaultColor)
 end
 
 -- ============================
+-- SAFE EXECUTION HANDLER
+-- ============================
+local function executeScript(url, scriptName, btn, defaultColor, defaultText)
+    if isExecuting then return end
+    isExecuting = true
+    playSound("Click")
+    
+    if btn then
+        btn.Text = "⏳ Executing..."
+        btn.BackgroundColor3 = THEME.Warning
+    end
+
+    task.spawn(function()
+        -- 1. Fetch the code safely
+        local fetchSuccess, source = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if not fetchSuccess then
+            if btn then
+                btn.Text = "✗ Network Error"
+                btn.BackgroundColor3 = THEME.Danger
+            end
+            notify("Execution Failed", "Network: " .. tostring(source):sub(1, 50), 4)
+            task.wait(2)
+            if btn then
+                btn.Text = defaultText
+                btn.BackgroundColor3 = defaultColor
+            end
+            isExecuting = false
+            return
+        end
+
+        -- 2. Validate that we downloaded Lua code, not a GitHub 404 page or HTML
+        local lowerSource = string.lower(tostring(source))
+        if type(source) ~= "string" or source == "404: Not Found" or string.sub(source, 1, 1) == "{" or string.find(lowerSource, "<!doctype") or string.find(lowerSource, "<html") then
+            if btn then
+                btn.Text = "✗ File Not Found"
+                btn.BackgroundColor3 = THEME.Danger
+            end
+            
+            local errMessage = "URL is wrong or file is missing."
+            if string.sub(source, 1, 1) == "{" then
+                local ok, data = pcall(function() return HttpService:JSONDecode(source) end)
+                if ok and type(data) == "table" and data.message then
+                    errMessage = "GitHub: " .. tostring(data.message):sub(1, 50)
+                end
+            elseif string.find(lowerSource, "<html") or string.find(lowerSource, "<!doctype") then
+                errMessage = "Link is not raw. Use raw.githubusercontent.com"
+            end
+
+            notify("Download Failed", errMessage, 5)
+            task.wait(2)
+            if btn then
+                btn.Text = defaultText
+                btn.BackgroundColor3 = defaultColor
+            end
+            isExecuting = false
+            return
+        end
+
+        -- 3. SANITIZE THE SOURCE
+        -- Strip Windows Carriage Returns (\r) which break loadstring in many executors
+        source = string.gsub(source, "\r\n", "\n")
+        source = string.gsub(source, "\r", "\n")
+
+        -- 4. Compile the code safely
+        local func, syntaxErr = loadstring(source, "=" .. scriptName)
+        
+        if not func then
+            if btn then
+                btn.Text = "✗ Syntax Error"
+                btn.BackgroundColor3 = THEME.Danger
+            end
+            notify("Execution Failed", "Syntax: " .. tostring(syntaxErr):sub(1, 50), 4)
+            warn("[Script Hub] Syntax Error in " .. scriptName .. ":\n" .. tostring(syntaxErr))
+            task.wait(2)
+            if btn then
+                btn.Text = defaultText
+                btn.BackgroundColor3 = defaultColor
+            end
+            isExecuting = false
+            return
+        end
+
+        -- 5. Execute the compiled function safely
+        local runtimeOk, runtimeErr = pcall(func)
+        
+        if runtimeOk then
+            if btn then
+                btn.Text = "✓ Loaded Successfully"
+                btn.BackgroundColor3 = THEME.Success
+            end
+            notify("Script Loader", scriptName .. " loaded!", 3)
+        else
+            if btn then
+                btn.Text = "✗ Runtime Error"
+                btn.BackgroundColor3 = THEME.Danger
+            end
+            notify("Execution Failed", "Runtime: " .. tostring(runtimeErr):sub(1, 50), 4)
+        end
+
+        task.wait(2)
+        if btn then
+            btn.Text = defaultText
+            btn.BackgroundColor3 = defaultColor
+        end
+        isExecuting = false
+    end)
+end
+
+-- ============================
 -- NETWORK FUNCTIONS
 -- ============================
 local function fetchGameScript()
@@ -130,7 +241,7 @@ local function fetchGameScript()
         if string.match(line, "%S") then
             local parts = {}
             for part in string.gmatch(line, "([^,]+)") do
-                table.insert(parts, part:match("^%s*(.-)%s*$")) -- trim whitespace
+                table.insert(parts, part:match("^%s*(.-)%s*$"))
             end
 
             if #parts >= 3 and parts[2] == currentGameId then
@@ -156,14 +267,14 @@ local function fetchUniversalScripts()
 
     local luaFiles = {}
     for _, item in ipairs(data) do
-        if item.type == "file" and string.lower(string.sub(item.name, -4)) == ".lua" then
-            -- Strip .lua extension BEFORE sorting so it sorts cleanly by name
-            local cleanName = string.gsub(item.name, "%.lua$", "")
-            table.insert(luaFiles, { name = cleanName, download_url = item.download_url })
+        if item.type == "file" and item.name and string.lower(string.sub(item.name, -4)) == ".lua" then
+            if item.download_url then
+                local cleanName = string.gsub(item.name, "%.lua$", "")
+                table.insert(luaFiles, { name = cleanName, download_url = item.download_url })
+            end
         end
     end
     
-    -- Strict A-Z Alphabetical Sort (Case-insensitive)
     table.sort(luaFiles, function(a, b)
         return string.lower(a.name) < string.lower(b.name)
     end)
@@ -175,11 +286,13 @@ end
 -- ============================
 -- UI BUILDER
 -- ============================
-local connections = {} -- Track connections to clean up on restart
+local connections = {} 
 
 local function cleanup()
     for _, conn in ipairs(connections) do
-        pcall(conn.Disconnect, conn)
+        if typeof(conn) == "RBXScriptConnection" then
+            pcall(function() conn:Disconnect() end)
+        end
     end
     connections = {}
 end
@@ -203,7 +316,6 @@ local function initializeGUI()
     mainFrame.Parent = screenGui
     Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
 
-    -- Header
     local header = Instance.new("Frame")
     header.Size = UDim2.new(1, 0, 0, 40)
     header.BackgroundColor3 = THEME.Header
@@ -211,7 +323,6 @@ local function initializeGUI()
     header.Parent = mainFrame
     Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
     
-    -- Mask header bottom corners
     local headerMask = Instance.new("Frame")
     headerMask.Size = UDim2.new(1, 0, 0, 10)
     headerMask.Position = UDim2.new(0, 0, 1, -10)
@@ -249,14 +360,12 @@ local function initializeGUI()
 
     makeDraggable(mainFrame, header)
 
-    -- Content Container
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 1, -50)
     container.Position = UDim2.new(0, 0, 0, 50)
     container.BackgroundTransparency = 1
     container.Parent = mainFrame
 
-    -- Loading Screen
     local loadingLabel = Instance.new("TextLabel")
     loadingLabel.Size = UDim2.new(1, 0, 1, 0)
     loadingLabel.BackgroundTransparency = 1
@@ -266,8 +375,6 @@ local function initializeGUI()
     loadingLabel.TextSize = 16
     loadingLabel.Parent = container
 
-    -- ============================
-    -- Buttons Setup
     local actionBtn = Instance.new("TextButton")
     actionBtn.Size = UDim2.new(1, -30, 0, 45)
     actionBtn.Position = UDim2.new(0, 15, 0, 15)
@@ -305,7 +412,6 @@ local function initializeGUI()
     Instance.new("UICorner", universalBtn).CornerRadius = UDim.new(0, 6)
     addHoverEffect(universalBtn, THEME.Element)
 
-    --=========== Tab Logic
     local function showMainTab()
         if container:FindFirstChild("TabFrame") then container.TabFrame:Destroy() end
         actionBtn.Visible = true
@@ -343,7 +449,6 @@ local function initializeGUI()
         return tabFrame
     end
 
-    --=========== Universal Tab
     table.insert(connections, universalBtn.MouseButton1Click:Connect(function()
         playSound("Click")
         local tabFrame = openTab()
@@ -358,7 +463,6 @@ local function initializeGUI()
         scroll.Parent = tabFrame
 
         local layout = Instance.new("UIListLayout")
-        -- Force layout to respect our sorted array insertion order
         layout.SortOrder = Enum.SortOrder.LayoutOrder 
         layout.Padding = UDim.new(0, 5)
         layout.Parent = scroll
@@ -388,13 +492,11 @@ local function initializeGUI()
                 return
             end
 
-            -- Files are already sorted A-Z from fetchUniversalScripts()
             for _, file in ipairs(files) do
-                local displayName = file.name -- Already cleaned (no .lua)
                 local btn = Instance.new("TextButton")
                 btn.Size = UDim2.new(1, 0, 0, 30)
                 btn.BackgroundColor3 = THEME.Element
-                btn.Text = "  " .. displayName
+                btn.Text = "  " .. file.name
                 btn.TextColor3 = THEME.Text
                 btn.Font = Enum.Font.Gotham
                 btn.TextSize = 13
@@ -406,37 +508,12 @@ local function initializeGUI()
                 addHoverEffect(btn, defaultColor)
 
                 table.insert(connections, btn.MouseButton1Click:Connect(function()
-                    if isExecuting then return end
-                    isExecuting = true
-                    playSound("Click")
-                    btn.Text = "  ⏳ Executing..."
-                    btn.BackgroundColor3 = THEME.Warning
-
-                    task.spawn(function()
-                        local success, err = pcall(function()
-                            loadstring(game:HttpGet(file.download_url))()
-                        end)
-                        
-                        if success then
-                            btn.Text = "  ✓ " .. displayName
-                            btn.BackgroundColor3 = THEME.Success
-                        else
-                            btn.Text = "  ✗ Error"
-                            btn.BackgroundColor3 = THEME.Danger
-                            notify("Execution Failed", tostring(err):sub(1, 50), 4)
-                        end
-                        
-                        task.wait(2)
-                        btn.Text = "  " .. displayName
-                        btn.BackgroundColor3 = defaultColor
-                        isExecuting = false
-                    end)
+                    executeScript(file.download_url, file.name, btn, defaultColor, "  " .. file.name)
                 end))
             end
         end)
     end))
 
-    --=========== Settings Tab
     table.insert(connections, settingsBtn.MouseButton1Click:Connect(function()
         playSound("Click")
         local tabFrame = openTab()
@@ -476,7 +553,7 @@ local function initializeGUI()
 
         table.insert(connections, restartBtn.MouseButton1Click:Connect(function()
             playSound("Close")
-            initializeGUI() -- Rebuilds the whole UI safely
+            initializeGUI() 
         end))
     end))
 
@@ -490,37 +567,13 @@ local function initializeGUI()
         local match, err = fetchGameScript()
 
         if match then
-            actionBtn.Text = "Execute: " .. match.name
+            local defaultActionText = "Execute: " .. match.name
+            actionBtn.Text = defaultActionText
             actionBtn.BackgroundColor3 = THEME.Success
             addHoverEffect(actionBtn, THEME.Success)
             
             table.insert(connections, actionBtn.MouseButton1Click:Connect(function()
-                if isExecuting then return end
-                isExecuting = true
-                playSound("Click")
-                actionBtn.Text = "Executing..."
-                actionBtn.BackgroundColor3 = THEME.Warning
-
-                task.spawn(function()
-                    local execSuccess, execErr = pcall(function()
-                        loadstring(game:HttpGet(match.scriptUrl))()
-                    end)
-                    
-                    if execSuccess then
-                        actionBtn.Text = "✓ Loaded Successfully"
-                        actionBtn.BackgroundColor3 = THEME.Success
-                        notify("Script Loader", match.name .. " loaded!", 3)
-                    else
-                        actionBtn.Text = "✗ Execution Error"
-                        actionBtn.BackgroundColor3 = THEME.Danger
-                        notify("Script Loader", "Failed: " .. tostring(execErr):sub(1, 50), 4)
-                    end
-                    
-                    task.wait(2)
-                    actionBtn.Text = "Execute: " .. match.name
-                    actionBtn.BackgroundColor3 = THEME.Success
-                    isExecuting = false
-                end)
+                executeScript(match.scriptUrl, "GameScript", actionBtn, THEME.Success, defaultActionText)
             end))
             notify("Script Hub", "Supported: " .. match.name, 3)
         else
