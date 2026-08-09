@@ -1,5 +1,5 @@
--- Orion Library UI for the requested features
-local OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/jensonhirst/Orion/main/source'))()
+-- Rayfield Gen2 UI Migration
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,11 +7,14 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 --======================== WINDOW ========================--
-local Window = OrionLib:MakeWindow({
-    Name = "Game Hub",
-    HidePremium = false,
-    SaveConfig = false,
-    ConfigFolder = "GameHub"
+local Window = Rayfield:CreateWindow({
+    name = "Game Hub",
+    subtitle = "Orion to Rayfield Gen2",
+    configuration = {
+        autoSave = false,
+        autoLoad = false,
+        fileName = "GameHub"
+    }
 })
 
 --======================== STATE ==========================--
@@ -229,55 +232,54 @@ task.spawn(function()
 end)
 
 --======================== TAB: PLAYER ====================--
-local PlayerTab = Window:MakeTab({
-    Name = "Player",
-    Icon = "rbxassetid://4483362458",
-    PremiumOnly = false
+local PlayerTab = Window:CreateTab({
+    name = "Player",
+    icon = 4483362458 -- Used the exact Asset ID from your Orion script
 })
 
-PlayerTab:AddToggle({
-    Name = "Auto Collect Coins",
-    Default = false,
-    Callback = function(v) Flags.AutoCoins = v end
+PlayerTab:CreateToggle({
+    name = "Auto Collect Coins",
+    flag = "AutoCoins",
+    value = false,
+    callback = function(v) Flags.AutoCoins = v end
 })
 
-PlayerTab:AddToggle({
-    Name = "Auto Teleport To Gun",
-    Default = false,
-    Callback = function(v) Flags.AutoGun = v end
+PlayerTab:CreateToggle({
+    name = "Auto Teleport To Gun",
+    flag = "AutoGun",
+    value = false,
+    callback = function(v) Flags.AutoGun = v end
 })
 
-PlayerTab:AddSlider({
-    Name = "Walk Speed",
-    Min = 16,
-    Max = 250,
-    Default = 16,
-    Color = Color3.fromRGB(255,255,255),
-    Increment = 1,
-    Callback = function(v) Flags.WalkSpeed = v end
+PlayerTab:CreateSlider({
+    name = "Walk Speed",
+    range = {16, 250},
+    increment = 1,
+    value = 16,
+    flag = "WalkSpeed",
+    callback = function(v) Flags.WalkSpeed = v end
 })
 
-PlayerTab:AddSlider({
-    Name = "Jump Power",
-    Min = 50,
-    Max = 350,
-    Default = 50,
-    Color = Color3.fromRGB(255,255,255),
-    Increment = 1,
-    Callback = function(v) Flags.JumpPower = v end
+PlayerTab:CreateSlider({
+    name = "Jump Power",
+    range = {50, 350},
+    increment = 1,
+    value = 50,
+    flag = "JumpPower",
+    callback = function(v) Flags.JumpPower = v end
 })
 
 --======================== TAB: ESP =======================--
-local ESPTab = Window:MakeTab({
-    Name = "ESP",
-    Icon = "rbxassetid://4483362458",
-    PremiumOnly = false
+local ESPTab = Window:CreateTab({
+    name = "ESP",
+    icon = 4483362458
 })
 
-ESPTab:AddToggle({
-    Name = "Show Killers",
-    Default = false,
-    Callback = function(v)
+ESPTab:CreateToggle({
+    name = "Show Killers",
+    flag = "ESP_Killer",
+    value = false,
+    callback = function(v)
         Flags.ESP_Killer = v
         if not v then
             for p, d in pairs(ESPObjects) do
@@ -287,10 +289,11 @@ ESPTab:AddToggle({
     end
 })
 
-ESPTab:AddToggle({
-    Name = "Show Sheriff",
-    Default = false,
-    Callback = function(v)
+ESPTab:CreateToggle({
+    name = "Show Sheriff",
+    flag = "ESP_Sheriff",
+    value = false,
+    callback = function(v)
         Flags.ESP_Sheriff = v
         if not v then
             for p, d in pairs(ESPObjects) do
@@ -300,10 +303,11 @@ ESPTab:AddToggle({
     end
 })
 
-ESPTab:AddToggle({
-    Name = "Show Players",
-    Default = false,
-    Callback = function(v)
+ESPTab:CreateToggle({
+    name = "Show Players",
+    flag = "ESP_Player",
+    value = false,
+    callback = function(v)
         Flags.ESP_Player = v
         if not v then
             for p, d in pairs(ESPObjects) do
@@ -312,6 +316,3 @@ ESPTab:AddToggle({
         end
     end
 })
-
---======================== INIT ===========================--
-OrionLib:Init()
