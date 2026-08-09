@@ -1,10 +1,11 @@
--- Rayfield Gen2 UI Migration
+-- Rayfield Gen2 UI Migration + Revenge Fling
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
+local Player = LocalPlayer -- Alias for SkidFling
 
 --======================== WINDOW ========================--
 local Window = Rayfield:CreateWindow({
@@ -26,10 +27,17 @@ local Flags = {
     ESP_Player = false,
     WalkSpeed = 16,
     JumpPower = 50,
-    Revenge = false, -- New Feature
+    RevengeFling = false
 }
 
 --======================== HELPERS ========================--
+local Message = function(_Title, _Text, Time)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {Title = _Title, Text = _Text, Duration = Time})
+    end)
+end
+
+-- Check if a player owns a tool (Backpack OR Equipped in Character)
 local function hasTool(player, toolName)
     if not player then return false end
     local success, result = pcall(function()
@@ -55,13 +63,147 @@ local function getRoot()
     end
 end
 
-local function getKiller()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and hasTool(p, "Monster") then
-            return p
+local function findKiller()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if hasTool(player, "Monster") then
+                return player
+            end
         end
     end
     return nil
+end
+
+--======================== SKID FLING (R-77) ==============--
+local SkidFling = function(TargetPlayer)
+    local Character = Player.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    local RootPart = Humanoid and Humanoid.RootPart
+    local TCharacter = TargetPlayer.Character
+    local THumanoid, TRootPart, THead, Accessory, Handle
+
+    if TCharacter and TCharacter:FindFirstChildOfClass("Humanoid") then
+        THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+    end
+    if THumanoid and THumanoid.RootPart then
+        TRootPart = THumanoid.RootPart
+    end
+    if TCharacter and TCharacter:FindFirstChild("Head") then
+        THead = TCharacter.Head
+    end
+    if TCharacter and TCharacter:FindFirstChildOfClass("Accessory") then
+        Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+    end
+    if Accessory and Accessory:FindFirstChild("Handle") then
+        Handle = Accessory.Handle
+    end
+
+    if Character and Humanoid and RootPart and TCharacter then
+        if RootPart.Velocity.Magnitude < 50 then
+            getgenv().OldPos = RootPart.CFrame
+        end
+        if THumanoid and THumanoid.Sit then
+            return Message("Error Occurred", "Targeting is sitting", 5)
+        end
+
+        if THead then
+            workspace.CurrentCamera.CameraSubject = THead
+        elseif not THead and Handle then
+            workspace.CurrentCamera.CameraSubject = Handle
+        elseif THumanoid and TRootPart then
+            workspace.CurrentCamera.CameraSubject = THumanoid
+        end
+
+        if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
+
+        local FPos = function(BasePart, Pos, Ang)
+            RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+            Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+            RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+            RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+        end
+
+        local SFBasePart = function(BasePart)
+            local TimeToWait = 2
+            local Time = tick()
+            local Angle = 0
+            repeat
+                if RootPart and THumanoid then
+                    if BasePart.Velocity.Magnitude < 50 then
+                        Angle = Angle + 100
+                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                    else
+                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5 ,0), CFrame.Angles(math.rad(-90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                        task.wait()
+                    end
+                else break end
+            until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TargetPlayer.Character or TargetPlayer.Parent ~= Players or not TargetPlayer.Character == TCharacter or (THumanoid and THumanoid.Sit) or Humanoid.Health <= 0 or tick() > Time + TimeToWait
+        end
+
+        local FPDH = workspace.FallenPartsDestroyHeight -- FIXED: Original script used getgenv().FPDH which was nil
+        workspace.FallenPartsDestroyHeight = 0/0
+        local BV = Instance.new("BodyVelocity")
+        BV.Name = "EpixVel"
+        BV.Parent = RootPart
+        BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+        BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+
+        if TRootPart and THead then
+            if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then SFBasePart(THead) else SFBasePart(TRootPart) end
+        elseif TRootPart and not THead then SFBasePart(TRootPart)
+        elseif not TRootPart and THead then SFBasePart(THead)
+        elseif not TRootPart and not THead and Accessory and Handle then SFBasePart(Handle)
+        else return Message("Error Occurred", "Target is missing everything", 5) end
+
+        BV:Destroy()
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        workspace.CurrentCamera.CameraSubject = Humanoid
+
+        repeat
+            RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
+            Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
+            Humanoid:ChangeState("GettingUp")
+            for _, x in ipairs(Character:GetChildren()) do -- FIXED: Replaced deprecated table.foreach
+                if x:IsA("BasePart") then
+                    x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+                end
+            end
+            task.wait()
+        until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
+        workspace.FallenPartsDestroyHeight = FPDH
+    else
+        return Message("Error Occurred", "Random error", 5)
+    end
 end
 
 --======================== ESP SYSTEM =====================--
@@ -208,7 +350,7 @@ task.spawn(function()
                             while Flags.AutoGun and part.Parent and root.Parent do
                                 part.CFrame = root.CFrame
                                 task.wait(0.05)
-                                if not part.Parent then break end
+                                if not part.Parent then break end 
                                 part.CFrame = originalCFrame
                                 task.wait(0.05)
                             end
@@ -239,73 +381,44 @@ end)
 --======================== REVENGE FLING ==================--
 task.spawn(function()
     while true do
-        if Flags.Revenge then
-            -- Check if we are dead/ghosted
-            local success, isGhost = pcall(function()
-                local ghost = LocalPlayer.PlayerGui.HUD.GhostText
-                return ghost and ghost.Visible and ghost:FindFirstChild("GoLobby") ~= nil
-            end)
-
-            if success and isGhost then
-                -- We are dead. Wait until we respawn (GhostText becomes invisible/destroyed)
-                repeat
-                    task.wait(0.2)
-                    if not Flags.Revenge then break end
-                    success, isGhost = pcall(function()
-                        local ghost = LocalPlayer.PlayerGui.HUD.GhostText
-                        return ghost and ghost.Visible and ghost:FindFirstChild("GoLobby") ~= nil
-                    end)
-                until (not success or not isGhost)
-
-                -- We have respawned! Wait a moment for physics to load
-                task.wait(0.75)
-
-                -- Now, violently fling the monster
-                if Flags.Revenge then
-                    local killer = getKiller()
-                    if killer and killer.Character then
-                        local root = killer.Character:FindFirstChild("HumanoidRootPart")
-                        if root then
-                            -- Flings them 3 times in a row to guarantee they get "tripped"
-                            for i = 1, 3 do
-                                if not Flags.Revenge or not killer.Character then break end
-                                
-                                local att = root:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", root)
-                                
-                                -- Massive upward force
-                                local vf = Instance.new("VectorForce")
-                                vf.Attachment0 = att
-                                vf.Force = Vector3.new(math.random(-90000, 90000), 250000, math.random(-90000, 90000))
-                                vf.RelativeTo = Enum.ActuatorRelativeTo.World
-                                vf.Parent = root
-                                
-                                -- Massive spin force to trip them
-                                local torque = Instance.new("Torque")
-                                torque.Attachment0 = att
-                                torque.Torque = Vector3.new(200000, 200000, 200000)
-                                torque.Parent = root
-                                
-                                task.wait(1.2)
-                                
-                                -- Cleanup forces
-                                if vf then vf:Destroy() end
-                                if torque then torque:Destroy() end
-                                
-                                task.wait(0.3)
-                            end
-                        end
-                    end
+        if Flags.RevengeFling then
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            local hud = playerGui and playerGui:FindFirstChild("HUD")
+            local ghostText = hud and hud:FindFirstChild("GhostText")
+            local goLobby = ghostText and ghostText:FindFirstChild("GoLobby")
+            
+            -- Wait for GhostText and GoLobby to be visible
+            if ghostText and goLobby and ghostText.Visible and goLobby.Visible then
+                -- Activate GoLobby in every way
+                pcall(function() goLobby.MouseButton1Click:Fire() end)
+                pcall(function() goLobby:FireServer() end) 
+                pcall(function() fireclickdetector(goLobby) end) 
+                
+                -- Wait to be respawned
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health <= 0 then
+                    LocalPlayer.CharacterAdded:Wait()
+                    task.wait(2) -- Wait a bit to ensure full spawn
                 end
+                
+                -- Try to fling the monster
+                local killer = findKiller()
+                if killer then
+                    pcall(SkidFling, killer)
+                end
+                
+                task.wait(2) -- Cooldown to prevent spam
             end
         end
-        task.wait(1) -- Check every second to save resources
+        task.wait(0.5)
     end
 end)
 
 --======================== TAB: PLAYER ====================--
 local PlayerTab = Window:CreateTab({
     name = "Player",
-    icon = 4483362458 
+    icon = 4483362458
 })
 
 PlayerTab:CreateToggle({
@@ -320,6 +433,14 @@ PlayerTab:CreateToggle({
     flag = "AutoGun",
     value = false,
     callback = function(v) Flags.AutoGun = v end
+})
+
+PlayerTab:CreateToggle({
+    name = "If you kill me, I will kill you",
+    flag = "RevengeFling",
+    description = "Auto rejoins and flings the monster if you die.",
+    value = false,
+    callback = function(v) Flags.RevengeFling = v end
 })
 
 PlayerTab:CreateSlider({
@@ -338,14 +459,6 @@ PlayerTab:CreateSlider({
     value = 50,
     flag = "JumpPower",
     callback = function(v) Flags.JumpPower = v end
-})
-
-PlayerTab:CreateToggle({
-    name = "If you kill me, I will kill you",
-    description = "Waits for you to respawn as a ghost, then violently flings the monster.",
-    flag = "Revenge",
-    value = false,
-    callback = function(v) Flags.Revenge = v end
 })
 
 --======================== TAB: ESP =======================--
