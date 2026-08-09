@@ -7,6 +7,7 @@ local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local ContentProvider = game:GetService("ContentProvider")
 local UserInputService = game:GetService("UserInputService")
+local MarketplaceService = game:GetService("MarketplaceService") -- Added for fetching game names
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -228,11 +229,8 @@ end
 -- ============================
 -- NETWORK FUNCTIONS
 -- ============================
-
 local function fetchGameScript()
-
     local csvUrl = "https://raw.githubusercontent.com/Thamerloai84/myhub/refs/heads/main/Scripts.csv"
-
     local success, result = pcall(function()
         return game:HttpGet(csvUrl)
     end)
@@ -244,11 +242,25 @@ local function fetchGameScript()
         if string.match(line, "%S") then
             local parts = {}
             for part in string.gmatch(line, "([^,]+)") do
-                table.insert(parts, part:match("^%s*(.-)%s*$"))
+                table.insert(parts, part:match("^%s*(.-)%s*$")) -- trim whitespace
             end
 
-            if #parts >= 3 and parts[2] == currentGameId then
-                return { name = parts[1], gameId = parts[2], scriptUrl = parts[3] }
+            -- NEW CSV FORMAT: PlaceId, URL (2 columns)
+            if #parts >= 2 and parts[1] == currentGameId then
+                local placeIdNum = tonumber(parts[1])
+                local gameName = "Unknown Game"
+                
+                -- Fetch the game name from Roblox API
+                if placeIdNum then
+                    local ok, info = pcall(function()
+                        return MarketplaceService:GetProductInfo(placeIdNum)
+                    end)
+                    if ok and info and info.Name then
+                        gameName = info.Name
+                    end
+                end
+
+                return { name = gameName, gameId = parts[1], scriptUrl = parts[2] }
             end
         end
     end
@@ -256,62 +268,33 @@ local function fetchGameScript()
 end
 
 local function fetchUniversalScripts()
-    local url = "https://api.github.com/repos/Thamerloai84/myhub/contents?ref=main"
+    if _G.ScriptHubState.ScriptCache then return _G.ScriptHubState.ScriptCache end
 
+    local url = "https://api.github.com/repos/Thamerloai84/myhub/contents?ref=main"
     local success, result = pcall(function()
         return game:HttpGet(url)
     end)
 
-    if not success then
-        return nil, "Network error: " .. tostring(result)
-    end
+    if not success then return nil, "Network error" end
 
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(result)
-    end)
-
-    if not ok or type(data) ~= "table" then
-        return nil, "Invalid API response"
-    end
+    local ok, data = pcall(function() return HttpService:JSONDecode(result) end)
+    if not ok or type(data) ~= "table" then return nil, "Invalid API response" end
 
     local luaFiles = {}
-
     for _, item in ipairs(data) do
-        if item.type == "file" and item.name then
-            if string.lower(item.name):sub(-4) == ".lua" then
-
-                local cleanName = item.name:sub(1, -5)
-
-                -- Build the raw GitHub URL ourselves.
-                -- This correctly handles spaces and + in the filename.
-                local encodedName = item.name
-                    :gsub("%%", "%%25")
-                    :gsub(" ", "%%20")
-                    :gsub("%+", "%%2B")
-                    :gsub("#", "%%23")
-                    :gsub("%?", "%%3F")
-
-                local downloadUrl =
-                    "https://raw.githubusercontent.com/Thamerloai84/myhub/refs/heads/main/"
-                    .. encodedName
-
-                table.insert(luaFiles, {
-                    name = cleanName,
-                    download_url = downloadUrl
-                })
-
-                print("[Script Hub] Found:", item.name)
-                print("[Script Hub] URL:", downloadUrl)
+        if item.type == "file" and item.name and string.lower(string.sub(item.name, -4)) == ".lua" then
+            if item.download_url then
+                local cleanName = string.gsub(item.name, "%.lua$", "")
+                table.insert(luaFiles, { name = cleanName, download_url = item.download_url })
             end
         end
     end
-
+    
     table.sort(luaFiles, function(a, b)
         return string.lower(a.name) < string.lower(b.name)
     end)
-
-    print("[Script Hub] Found " .. #luaFiles .. " Lua script(s).")
-
+    
+    _G.ScriptHubState.ScriptCache = luaFiles
     return luaFiles, nil
 end
 
