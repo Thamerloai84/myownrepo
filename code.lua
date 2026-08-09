@@ -228,8 +228,11 @@ end
 -- ============================
 -- NETWORK FUNCTIONS
 -- ============================
+
 local function fetchGameScript()
+
     local csvUrl = "https://raw.githubusercontent.com/Thamerloai84/myhub/refs/heads/main/Scripts.csv"
+
     local success, result = pcall(function()
         return game:HttpGet(csvUrl)
     end)
@@ -253,33 +256,62 @@ local function fetchGameScript()
 end
 
 local function fetchUniversalScripts()
-    if _G.ScriptHubState.ScriptCache then return _G.ScriptHubState.ScriptCache end
-
     local url = "https://api.github.com/repos/Thamerloai84/myhub/contents?ref=main"
+
     local success, result = pcall(function()
         return game:HttpGet(url)
     end)
 
-    if not success then return nil, "Network error" end
+    if not success then
+        return nil, "Network error: " .. tostring(result)
+    end
 
-    local ok, data = pcall(function() return HttpService:JSONDecode(result) end)
-    if not ok or type(data) ~= "table" then return nil, "Invalid API response" end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(result)
+    end)
+
+    if not ok or type(data) ~= "table" then
+        return nil, "Invalid API response"
+    end
 
     local luaFiles = {}
+
     for _, item in ipairs(data) do
-        if item.type == "file" and item.name and string.lower(string.sub(item.name, -4)) == ".lua" then
-            if item.download_url then
-                local cleanName = string.gsub(item.name, "%.lua$", "")
-                table.insert(luaFiles, { name = cleanName, download_url = item.download_url })
+        if item.type == "file" and item.name then
+            if string.lower(item.name):sub(-4) == ".lua" then
+
+                local cleanName = item.name:sub(1, -5)
+
+                -- Build the raw GitHub URL ourselves.
+                -- This correctly handles spaces and + in the filename.
+                local encodedName = item.name
+                    :gsub("%%", "%%25")
+                    :gsub(" ", "%%20")
+                    :gsub("%+", "%%2B")
+                    :gsub("#", "%%23")
+                    :gsub("%?", "%%3F")
+
+                local downloadUrl =
+                    "https://raw.githubusercontent.com/Thamerloai84/myhub/refs/heads/main/"
+                    .. encodedName
+
+                table.insert(luaFiles, {
+                    name = cleanName,
+                    download_url = downloadUrl
+                })
+
+                print("[Script Hub] Found:", item.name)
+                print("[Script Hub] URL:", downloadUrl)
             end
         end
     end
-    
+
     table.sort(luaFiles, function(a, b)
         return string.lower(a.name) < string.lower(b.name)
     end)
-    
-    _G.ScriptHubState.ScriptCache = luaFiles
+
+    print("[Script Hub] Found " .. #luaFiles .. " Lua script(s).")
+
     return luaFiles, nil
 end
 
