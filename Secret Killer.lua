@@ -26,10 +26,10 @@ local Flags = {
     ESP_Player = false,
     WalkSpeed = 16,
     JumpPower = 50,
+    Revenge = false, -- New Feature
 }
 
 --======================== HELPERS ========================--
--- Check if a player owns a tool (Backpack OR Equipped in Character)
 local function hasTool(player, toolName)
     if not player then return false end
     local success, result = pcall(function()
@@ -55,6 +55,15 @@ local function getRoot()
     end
 end
 
+local function getKiller()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and hasTool(p, "Monster") then
+            return p
+        end
+    end
+    return nil
+end
+
 --======================== ESP SYSTEM =====================--
 local ESPObjects = {} 
 local ROLE_COLORS = {
@@ -71,7 +80,6 @@ local function clearESP(player)
     end
     ESPObjects[player] = nil
     
-    -- Fallback sweep to destroy any orphaned ESP objects (fixes stacking bug)
     local char = player.Character
     if char then
         for _, v in ipairs(char:GetChildren()) do
@@ -92,12 +100,10 @@ local function createESP(player, role)
 
     local existing = ESPObjects[player]
     
-    -- If ESP exists, is the correct role, and is parented to the current character, do nothing
     if existing and existing.Role == role and existing.Highlight and existing.Highlight.Parent == char then
         return 
     end
     
-    -- Always clear old ESP before making a new one to prevent duplicates
     clearESP(player)
     
     local hl = Instance.new("Highlight")
@@ -199,11 +205,10 @@ task.spawn(function()
                         local root = getRoot()
                         if root then
                             local originalCFrame = part.CFrame
-                            -- Loop teleporting the gun to us and back until it disappears (collected)
                             while Flags.AutoGun and part.Parent and root.Parent do
                                 part.CFrame = root.CFrame
                                 task.wait(0.05)
-                                if not part.Parent then break end -- Break if gun got picked up
+                                if not part.Parent then break end
                                 part.CFrame = originalCFrame
                                 task.wait(0.05)
                             end
@@ -231,10 +236,76 @@ task.spawn(function()
     end
 end)
 
+--======================== REVENGE FLING ==================--
+task.spawn(function()
+    while true do
+        if Flags.Revenge then
+            -- Check if we are dead/ghosted
+            local success, isGhost = pcall(function()
+                local ghost = LocalPlayer.PlayerGui.HUD.GhostText
+                return ghost and ghost.Visible and ghost:FindFirstChild("GoLobby") ~= nil
+            end)
+
+            if success and isGhost then
+                -- We are dead. Wait until we respawn (GhostText becomes invisible/destroyed)
+                repeat
+                    task.wait(0.2)
+                    if not Flags.Revenge then break end
+                    success, isGhost = pcall(function()
+                        local ghost = LocalPlayer.PlayerGui.HUD.GhostText
+                        return ghost and ghost.Visible and ghost:FindFirstChild("GoLobby") ~= nil
+                    end)
+                until (not success or not isGhost)
+
+                -- We have respawned! Wait a moment for physics to load
+                task.wait(0.75)
+
+                -- Now, violently fling the monster
+                if Flags.Revenge then
+                    local killer = getKiller()
+                    if killer and killer.Character then
+                        local root = killer.Character:FindFirstChild("HumanoidRootPart")
+                        if root then
+                            -- Flings them 3 times in a row to guarantee they get "tripped"
+                            for i = 1, 3 do
+                                if not Flags.Revenge or not killer.Character then break end
+                                
+                                local att = root:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", root)
+                                
+                                -- Massive upward force
+                                local vf = Instance.new("VectorForce")
+                                vf.Attachment0 = att
+                                vf.Force = Vector3.new(math.random(-90000, 90000), 250000, math.random(-90000, 90000))
+                                vf.RelativeTo = Enum.ActuatorRelativeTo.World
+                                vf.Parent = root
+                                
+                                -- Massive spin force to trip them
+                                local torque = Instance.new("Torque")
+                                torque.Attachment0 = att
+                                torque.Torque = Vector3.new(200000, 200000, 200000)
+                                torque.Parent = root
+                                
+                                task.wait(1.2)
+                                
+                                -- Cleanup forces
+                                if vf then vf:Destroy() end
+                                if torque then torque:Destroy() end
+                                
+                                task.wait(0.3)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(1) -- Check every second to save resources
+    end
+end)
+
 --======================== TAB: PLAYER ====================--
 local PlayerTab = Window:CreateTab({
     name = "Player",
-    icon = 4483362458 -- Used the exact Asset ID from your Orion script
+    icon = 4483362458 
 })
 
 PlayerTab:CreateToggle({
@@ -267,6 +338,14 @@ PlayerTab:CreateSlider({
     value = 50,
     flag = "JumpPower",
     callback = function(v) Flags.JumpPower = v end
+})
+
+PlayerTab:CreateToggle({
+    name = "If you kill me, I will kill you",
+    description = "Waits for you to respawn as a ghost, then violently flings the monster.",
+    flag = "Revenge",
+    value = false,
+    callback = function(v) Flags.Revenge = v end
 })
 
 --======================== TAB: ESP =======================--
