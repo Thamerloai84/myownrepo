@@ -1,5 +1,5 @@
 -- ============================
--- SCRIPT HUB v4 (Stable Release)
+-- SCRIPT HUB v5 (Final Stable)
 -- ============================
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -7,7 +7,7 @@ local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local ContentProvider = game:GetService("ContentProvider")
 local UserInputService = game:GetService("UserInputService")
-local MarketplaceService = game:GetService("MarketplaceService") -- Added for fetching game names
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -58,9 +58,13 @@ local function preloadSounds()
 end
 
 local function playSound(name)
-    if soundInstances[name] then
-        soundInstances[name]:Stop()
-        soundInstances[name]:Play()
+    local s = soundInstances[name]
+    if s then
+        pcall(function()
+            -- Reset time position to fix sounds not playing if clicked rapidly
+            s.TimePosition = 0
+            s:Play()
+        end)
     end
 end
 
@@ -148,7 +152,7 @@ local function executeScript(url, scriptName, btn, defaultColor, defaultText)
             return
         end
 
-        -- 2. Validate that we downloaded Lua code, not a GitHub 404 page or HTML
+        -- 2. Validate that we downloaded Lua code
         local lowerSource = string.lower(tostring(source))
         if type(source) ~= "string" or source == "404: Not Found" or string.sub(source, 1, 1) == "{" or string.find(lowerSource, "<!doctype") or string.find(lowerSource, "<html") then
             if btn then
@@ -177,7 +181,6 @@ local function executeScript(url, scriptName, btn, defaultColor, defaultText)
         end
 
         -- 3. SANITIZE THE SOURCE
-        -- Strip Windows Carriage Returns (\r) which break loadstring in many executors
         source = string.gsub(source, "\r\n", "\n")
         source = string.gsub(source, "\r", "\n")
 
@@ -190,7 +193,6 @@ local function executeScript(url, scriptName, btn, defaultColor, defaultText)
                 btn.BackgroundColor3 = THEME.Danger
             end
             notify("Execution Failed", "Syntax: " .. tostring(syntaxErr):sub(1, 50), 4)
-            warn("[Script Hub] Syntax Error in " .. scriptName .. ":\n" .. tostring(syntaxErr))
             task.wait(2)
             if btn then
                 btn.Text = defaultText
@@ -200,16 +202,34 @@ local function executeScript(url, scriptName, btn, defaultColor, defaultText)
             return
         end
 
-        -- 5. Execute the compiled function safely
-        local runtimeOk, runtimeErr = pcall(func)
-        
-        if runtimeOk then
+        -- 5. Execute with 20-second Yield Timeout
+        local runtimeOk, runtimeErr
+        local thread = coroutine.create(function()
+            runtimeOk, runtimeErr = pcall(func)
+        end)
+        coroutine.resume(thread)
+
+        local startTime = os.clock()
+        while coroutine.status(thread) ~= "dead" and (os.clock() - startTime) < 20 do
+            task.wait(0.1)
+        end
+
+        if coroutine.status(thread) ~= "dead" then
+            -- Took more than 20 seconds
+            if btn then
+                btn.Text = "✓ Yielded too long!"
+                btn.BackgroundColor3 = THEME.Success
+            end
+            notify("Script Loader", "Yielded too long! Assumed that the script works.", 5)
+        elseif runtimeOk then
+            -- Finished successfully under 20 seconds
             if btn then
                 btn.Text = "✓ Loaded Successfully"
                 btn.BackgroundColor3 = THEME.Success
             end
             notify("Script Loader", scriptName .. " loaded!", 3)
         else
+            -- Finished under 20 seconds but encountered a runtime error
             if btn then
                 btn.Text = "✗ Runtime Error"
                 btn.BackgroundColor3 = THEME.Danger
@@ -242,15 +262,13 @@ local function fetchGameScript()
         if string.match(line, "%S") then
             local parts = {}
             for part in string.gmatch(line, "([^,]+)") do
-                table.insert(parts, part:match("^%s*(.-)%s*$")) -- trim whitespace
+                table.insert(parts, part:match("^%s*(.-)%s*$"))
             end
 
-            -- NEW CSV FORMAT: PlaceId, URL (2 columns)
             if #parts >= 2 and parts[1] == currentGameId then
                 local placeIdNum = tonumber(parts[1])
                 local gameName = "Unknown Game"
                 
-                -- Fetch the game name from Roblox API
                 if placeIdNum then
                     local ok, info = pcall(function()
                         return MarketplaceService:GetProductInfo(placeIdNum)
@@ -582,7 +600,14 @@ local function initializeGUI()
         local match, err = fetchGameScript()
 
         if match then
-            local defaultActionText = "Execute: " .. match.name
+            -- Truncate game name if it's too long to fit in the button
+            local maxNameLength = 25
+            local displayName = match.name
+            if #displayName > maxNameLength then
+                displayName = string.sub(displayName, 1, maxNameLength) .. "..."
+            end
+            
+            local defaultActionText = "Execute: " .. displayName
             actionBtn.Text = defaultActionText
             actionBtn.BackgroundColor3 = THEME.Success
             addHoverEffect(actionBtn, THEME.Success)
