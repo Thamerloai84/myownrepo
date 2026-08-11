@@ -35,6 +35,7 @@ local CONFIG = {
 		{27, 42, 53},
 	},
 	BAD_GROUND_TOLERANCE = 4,
+    BAD_GROUND_TRANSPARENCY = 0.2,
 
 	-- PATCH: healing decision settings
 	MEDKIT_USE_TIME = 1.1,
@@ -86,21 +87,35 @@ local function IsBadGroundColor(color)
 end
 
 local function IsBadGroundPart(part)
-	if not part then return false end
+    if not part then return false end
 
-	if not part:IsA("BasePart") then
-		return false
-	end
+    if not part:IsA("BasePart") then
+        return false
+    end
 
-	local ok, color = pcall(function()
-		return part.Color
-	end)
+    local okColor, color = pcall(function()
+        return part.Color
+    end)
 
-	if not ok or not color then
-		return false
-	end
+    if not okColor or not color then
+        return false
+    end
 
-	return IsBadGroundColor(color)
+    -- First check if it is one of the bad colors: 27, 42, 53
+    if not IsBadGroundColor(color) then
+        return false
+    end
+
+    -- Then check if its Transparency is 0.2 or higher
+    local okTrans, transparency = pcall(function()
+        return part.Transparency
+    end)
+
+    if not okTrans or type(transparency) ~= "number" then
+        return false
+    end
+
+    return transparency >= (CONFIG.BAD_GROUND_TRANSPARENCY or 0.2)
 end
 
 local HUM_STATES_SHIFTLOCK = {"Running", "Jumping", "Freefall", "Landed", "Climbing"}
